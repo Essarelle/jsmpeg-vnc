@@ -1,5 +1,5 @@
 #define WIN32_LEAN_AND_MEAN
-#include <Windows.h>
+#include <windows.h>
 #include <stdio.h>
 #include "app.h"
 
@@ -112,7 +112,7 @@ int main(int argc, char* argv[]) {
 	GetWindowTextA(window, real_window_title, sizeof(real_window_title));
 	printf(
 		"Window 0x%08x: \"%s\"\n"
-		"Window size: %dx%d, output size: %dx%d, bit rate: %d kb/s\n\n"
+		"Window size: %dx%d, output size: %dx%d, bit rate: %lli kb/s\n\n"
 		"Server started on: http://%s:%d/\n\n",
 		window, real_window_title,
 		app->grabber->width, app->grabber->height,

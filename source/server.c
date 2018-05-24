@@ -6,15 +6,15 @@
 #pragma comment(lib, "winmm.lib")
 #pragma comment(lib, "Ws2_32.lib")
 
-client_t *client_insert(client_t **head, libwebsocket *socket) {
-	client_t *client = (server_client_t *)malloc(sizeof(server_client_t));
+client_t *client_insert(client_t **head, struct libwebsocket *socket) {
+	client_t *client = (struct server_client_t *)malloc(sizeof(struct server_client_t));
 	client->socket = socket;
 	client->next = *head;
 	*head = client;
 	return client;
 }
 
-void client_remove(client_t **head, libwebsocket *socket) {
+void client_remove(client_t **head, struct libwebsocket *socket) {
 	for( client_t **current = head; *current; current = &(*current)->next ) {
 		if( (*current)->socket == socket ) {
 			client_t* next = (*current)->next;
@@ -47,7 +47,7 @@ server_t *server_create(int port, size_t buffer_size) {
 	self->port = port;
 	self->clients = NULL;
 
-	lws_set_log_level(LLL_ERR | LLL_WARN, NULL);
+	lws_set_log_level(LLL_ERR | LLL_WARN | LLL_NOTICE | LLL_INFO | LLL_DEBUG, NULL);
 
 	struct lws_context_creation_info info = {0};
 	info.port = port;
@@ -78,7 +78,7 @@ void server_destroy(server_t *self) {
 
 char *server_get_host_address(server_t *self) {
 	char host_name[80];
-	hostent *host;
+	struct hostent *host;
 	if( 
 		gethostname(host_name, sizeof(host_name)) == SOCKET_ERROR ||
 		!(host = gethostbyname(host_name))
@@ -89,7 +89,7 @@ char *server_get_host_address(server_t *self) {
 	return inet_ntoa( *(IN_ADDR *)(host->h_addr_list[0]) );
 }
 
-char *server_get_client_address(server_t *self, libwebsocket *wsi) {
+char *server_get_client_address(server_t *self, struct libwebsocket *wsi) {
 	static char ip_buffer[32];
 	static char name_buffer[32];
 
@@ -106,7 +106,7 @@ void server_update(server_t *self) {
 	libwebsocket_service(self->context, 0);
 }
 
-void server_send(server_t *self, libwebsocket *socket, void *data, size_t size, server_data_type_t type) {
+void server_send(server_t *self, struct libwebsocket *socket, void *data, size_t size, server_data_type_t type) {
 	// Caution, this may explode! The libwebsocket docs advise against ever calling libwebsocket_write()
 	// outside of LWS_CALLBACK_SERVER_WRITEABLE. Honoring this advise would complicate things quite
 	// a bit - and it seems to work just fine on my system as it is anyway.
@@ -118,7 +118,7 @@ void server_send(server_t *self, libwebsocket *socket, void *data, size_t size, 
 		return;
 	}
 	memcpy(self->send_buffer, data, size);
-	libwebsocket_write(socket, self->send_buffer, size, (libwebsocket_write_protocol)type);
+	libwebsocket_write(socket, self->send_buffer, size, (enum libwebsocket_write_protocol)type);
 }
 
 void server_broadcast(server_t *self, void *data, size_t size, server_data_type_t type) {
@@ -129,7 +129,7 @@ void server_broadcast(server_t *self, void *data, size_t size, server_data_type_
 	memcpy(self->send_buffer, data, size);
 
 	client_foreach(self->clients, client) {
-		libwebsocket_write(client->socket, self->send_buffer, size, (libwebsocket_write_protocol)type);
+		libwebsocket_write(client->socket, self->send_buffer, size, (enum libwebsocket_write_protocol)type);
 	}
 	libwebsocket_callback_on_writable_all_protocol(&(server_protocols[1]));
 }
@@ -176,7 +176,13 @@ static int callback_http(
 	void *in, size_t len
 ) {
 	server_t *self = (server_t *)libwebsocket_context_user(context);
-	
+
+    switch( reason ) {
+        case LWS_CALLBACK_ESTABLISHED:
+		case LWS_CALLBACK_RECEIVE:
+		case LWS_CALLBACK_CLOSED:
+			callback_websockets(context, wsi, reason, user, in, len); // this is a hack
+    }
 	if( reason == LWS_CALLBACK_HTTP ) {
 		if( self->on_http_req && self->on_http_req(self, wsi, (char *)in) ) {
 			return 0;

@@ -116,7 +116,6 @@ publish/
 *.pubxml
 
 # NuGet Packages Directory
-## TODO: If you have NuGet Package Restore enabled, uncomment the next line
 #packages/
 
 # Windows Azure Build Output
@@ -165,3 +164,9 @@ Desktop.ini
 
 # Recycle Bin used on file shares
 $RECYCLE.BIN/
+
+/cmake-*/
+/.idea/
+/ffmpeg/
+/libwebsockets/
+/run/
