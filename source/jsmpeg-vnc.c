@@ -2,6 +2,8 @@
 
 #include <windows.h>
 #include <stdio.h>
+#include <stdbool.h>
+#include <signal.h>
 #include "app.h"
 
 typedef struct {
@@ -51,7 +53,13 @@ void exit_usage(char *self_name) {
     exit(0);
 }
 
+void sigint_handler(int sig) {
+    interrupted = true;
+}
+
 int main(int argc, char *argv[]) {
+    signal(SIGINT, sigint_handler);
+    signal(SIGTERM, sigint_handler);
     if (argc < 2) {
         exit_usage(argv[0]);
     }

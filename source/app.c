@@ -60,17 +60,13 @@ int swap_int16(int in) {
 }
 
 // Proxies for app_on_* callbacks
-void on_connect(server_t *server, struct libwebsocket *socket) { app_on_connect((app_t *) server->user, socket); }
+void on_connect(server_t *server, struct lws *socket) { app_on_connect((app_t *) server->user, socket); }
 
-int on_http_req(server_t *server, struct libwebsocket *socket, char *request) {
-    return app_on_http_req((app_t *) server->user, socket, request);
-}
-
-void on_message(server_t *server, struct libwebsocket *socket, void *data, size_t len) {
+void on_message(server_t *server, struct lws *socket, void *data, size_t len) {
     app_on_message((app_t *) server->user, socket, data, len);
 }
 
-void on_close(server_t *server, struct libwebsocket *socket) { app_on_close((app_t *) server->user, socket); }
+void on_close(server_t *server, struct lws *socket) { app_on_close((app_t *) server->user, socket); }
 
 
 app_t *app_create(HWND window, int port, int bit_rate, int out_width, int out_height, int allow_input,
@@ -99,7 +95,6 @@ app_t *app_create(HWND window, int port, int bit_rate, int out_width, int out_he
     }
 
     self->server->on_connect = on_connect;
-    self->server->on_http_req = on_http_req;
     self->server->on_message = on_message;
     self->server->on_close = on_close;
     self->server->user = self; // Set the app as user data, so we can access it in callbacks
@@ -116,39 +111,21 @@ void app_destroy(app_t *self) {
     free(self);
 }
 
-int app_on_http_req(app_t *self, struct libwebsocket *socket, char *request) {
-    //printf("http request: %s\n", request);
-    if (strcmp(request, "/") == 0) {
-        libwebsockets_serve_http_file(self->server->context, socket, "client/index.html", "text/html; charset=utf-8",
-                                      NULL, 0);
-        return true;
-    } else if (strcmp(request, "/jsmpg.js") == 0) {
-        libwebsockets_serve_http_file(self->server->context, socket, "client/jsmpg.js",
-                                      "text/javascript; charset=utf-8", NULL, 0);
-        return true;
-    } else if (strcmp(request, "/jsmpg-vnc.js") == 0) {
-        libwebsockets_serve_http_file(self->server->context, socket, "client/jsmpg-vnc.js",
-                                      "text/javascript; charset=utf-8", NULL, 0);
-        return true;
-    }
-    return false;
-}
-
-void app_on_connect(app_t *self, struct libwebsocket *socket) {
+void app_on_connect(app_t *self, struct lws *socket) {
     printf("\nclient connected: %s\n", server_get_client_address(self->server, socket));
 
     jsmpeg_header_t header = {
         {'j', 's', 'm', 'p'},
         swap_int16(self->encoder->out_width), swap_int16(self->encoder->out_height)
     };
-    server_send(self->server, socket, &header, sizeof(header), server_type_binary);
+    server_send(self->server, socket, &header, sizeof(header), LWS_WRITE_BINARY);
 }
 
-void app_on_close(app_t *self, struct libwebsocket *socket) {
+void app_on_close(app_t *self, struct lws *socket) {
     printf("\nclient disconnected: %s\n", server_get_client_address(self->server, socket));
 }
 
-void app_on_message(app_t *self, struct libwebsocket *socket, void *data, size_t len) {
+void app_on_message(app_t *self, struct lws *socket, void *data, size_t len) {
     if (!self->allow_input) {
         return;
     }
@@ -207,12 +184,12 @@ void app_on_message(app_t *self, struct libwebsocket *socket, void *data, size_t
                 y = (int) (input->y * self->mouse_speed);
 
             //printf("mouse relative %d, %d\n", x, y);
-            mouse_event(MOUSEEVENTF_MOVE, x, y, 0, NULL);
+            mouse_event(MOUSEEVENTF_MOVE, x, y, 0, 0);
         }
 
         if (type & input_type_mouse_button) {
             //printf("mouse button %d\n", input->flags);
-            mouse_event(input->flags, 0, 0, 0, NULL);
+            mouse_event(input->flags, 0, 0, 0, 0);
         }
     }
 }
@@ -228,7 +205,7 @@ void app_run(app_t *self, int target_fps) {
 
     timer_t *frame_timer = timer_create();
 
-    while (true) {
+    while (!interrupted) {
         double delta = timer_delta(frame_timer);
         if (delta > wait_time) {
             fps = fps * 0.95f + 50.0f / delta;
@@ -245,7 +222,7 @@ void app_run(app_t *self, int target_fps) {
 
                 if (encoded_size) {
                     frame->size = swap_int32(sizeof(jsmpeg_frame_t) + encoded_size);
-                    server_broadcast(self->server, frame, sizeof(jsmpeg_frame_t) + encoded_size, server_type_binary);
+                    server_broadcast(self->server, frame, sizeof(jsmpeg_frame_t) + encoded_size, LWS_WRITE_BINARY);
                 }
             }
 

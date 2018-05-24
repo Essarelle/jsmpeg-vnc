@@ -168,5 +168,4 @@ $RECYCLE.BIN/
 /cmake-*/
 /.idea/
 /ffmpeg/
-/libwebsockets/
 /run/
