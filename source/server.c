@@ -1,6 +1,13 @@
 ﻿#include <stdlib.h>
 #include <stdio.h>
+#include <unistd.h>
 #include "server.h"
+
+#ifdef __linux__
+
+#include <arpa/inet.h>
+
+#endif
 
 static int
 callback_websockets(struct lws *wsi, enum lws_callback_reasons reason,
@@ -50,6 +57,7 @@ server_t *server_create(int port, size_t buffer_size) {
     info.user = (void *) self;
     info.protocols = server_protocols;
     info.mounts = &mount;
+    info.max_http_header_pool = 64;
     self->context = lws_create_context(&info);
 
     if (!self->context) {
@@ -73,11 +81,11 @@ void server_destroy(server_t *self) {
 char *server_get_host_address(server_t *self) {
     char host_name[80];
     struct hostent *host;
-    if (gethostname(host_name, sizeof(host_name)) == SOCKET_ERROR || !(host = gethostbyname(host_name))) {
+    if (gethostname(host_name, sizeof(host_name)) == -1 || !(host = gethostbyname(host_name))) {
         return "127.0.0.1";
     }
 
-    return inet_ntoa(*(IN_ADDR *) (host->h_addr_list[0]));
+    return inet_ntoa(*(struct in_addr *) (host->h_addr_list[0]));
 }
 
 char *server_get_client_address(server_t *self, struct lws *wsi) {
@@ -153,6 +161,7 @@ static int callback_websockets(struct lws *wsi, enum lws_callback_reasons reason
             if (user_client->send_frames_count > 0) {
                 struct send_frame_t send_frame = user_client->send_frames[0];
                 lws_write(wsi, send_frame.data + LWS_PRE, send_frame.size, send_frame.type);
+                memcpy(user_client->send_frames, user_client->send_frames + 1, sizeof(struct send_frame_t));
                 user_client->send_frames_count--;
             }
             if (user_client->send_frames_count > 0) {

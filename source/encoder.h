@@ -1,11 +1,10 @@
 #ifndef ENCODER_H
 #define ENCODER_H
 
-//extern "C" {
 #include "libavutil/avutil.h"
+#include "libavutil/imgutils.h"
 #include "libavcodec/avcodec.h"
 #include "libswscale/swscale.h"
-//}
 
 typedef struct {
     AVCodec *codec;

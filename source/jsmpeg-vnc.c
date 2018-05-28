@@ -1,34 +1,11 @@
 #define WIN32_LEAN_AND_MEAN
 
-#include <windows.h>
 #include <stdio.h>
+#include <stdlib.h>
 #include <stdbool.h>
 #include <signal.h>
+#include <string.h>
 #include "app.h"
-
-typedef struct {
-    char *prefix;
-    HWND window;
-} window_with_prefix_data_t;
-
-BOOL CALLBACK window_with_prefix_callback(HWND window, LPARAM lParam) {
-    window_with_prefix_data_t *find = (window_with_prefix_data_t *) lParam;
-
-    char title[80];
-    GetWindowTextA(window, title, sizeof(title));
-
-    if (!find->window && strncmp(find->prefix, title, strlen(find->prefix)) == 0) {
-        find->window = window;
-    }
-    return TRUE;
-}
-
-HWND window_with_prefix(char *title_prefix) {
-    window_with_prefix_data_t find = {title_prefix, NULL};
-    EnumWindows(window_with_prefix_callback, (LPARAM) &find);
-
-    return find.window;
-}
 
 void exit_usage(char *self_name) {
     printf(
@@ -57,7 +34,16 @@ void sigint_handler(int sig) {
     interrupted = true;
 }
 
+#ifndef _WIN32
+
 int main(int argc, char *argv[]) {
+#else
+    int wmain(int argc, wchar_t *argv_wide[]) {
+        char **argv = malloc(sizeof(char *) * argc);
+        for (size_t i = 0; i < argc; i++) {
+            argv[i] = from_wide(argv_wide[i]);
+        }
+#endif
     signal(SIGINT, sigint_handler);
     signal(SIGTERM, sigint_handler);
     if (argc < 2) {
@@ -81,19 +67,19 @@ int main(int argc, char *argv[]) {
 
         switch (argv[i][1]) {
             case 'b':
-                bit_rate = atoi(argv[i + 1]) * 1000;
+                bit_rate = strtol(argv[i + 1], NULL, 0) * 1000;
                 break;
             case 'p':
-                port = atoi(argv[i + 1]);
+                port = strtol(argv[i + 1], NULL, 0);
                 break;
             case 's':
                 sscanf(argv[i + 1], "%dx%d", &width, &height);
                 break;
             case 'f':
-                fps = atoi(argv[i + 1]);
+                fps = strtol(argv[i + 1], NULL, 0);
                 break;
             case 'i':
-                allow_input = atoi(argv[i + 1]);
+                allow_input = strtol(argv[i + 1], NULL, 0);
                 break;
             case 'c':
                 sscanf(argv[i + 1], "%d,%d,%d,%d", &crop.x, &crop.y, &crop.width, &crop.height);
@@ -105,46 +91,75 @@ int main(int argc, char *argv[]) {
 
     // Find target window
     char *window_title = argv[argc - 1];
-    HWND window = NULL;
-    if (strcmp(window_title, "desktop") == 0) {
-        window = GetDesktopWindow();
-    } else if (strcmp(window_title, "cursor") == 0) {
-        POINT cursor;
-        GetCursorPos(&cursor);
-        window = WindowFromPoint(cursor);
-    } else {
-        window = window_with_prefix(window_title);
+    window_system_connection_t *window_system_connection = window_system_connection_new();
+    windows_list_t *windows_list = windows_list_query(window_system_connection);
+    printf("Windows:\n");
+    for (size_t i = 0; i < windows_list_get_length(windows_list); i++) {
+        printf("%lu. %s\n", (unsigned long) i, window_get_title(windows_list_get(windows_list, i)));
     }
+    window_t *window = NULL;
+    if (strcmp(window_title, "desktop") == 0) {
+        window = windows_list_find_desktop(windows_list, window_system_connection);
+    } else {
+        window = windows_list_find_title_prefix(windows_list, window_title);
+    }
+//    else if (strcmp(window_title, "cursor") == 0) {
+//       POINT cursor;
+//       GetCursorPos(&cursor);
+//       window = WindowFromPoint(cursor);
+//    }
 
-    if (!window) {
+    if (window == NULL) {
         printf("No window with title starting with \"%s\"\n", window_title);
         return 0;
     }
 
     // Start the app
-    app_t *app = app_create(window, port, bit_rate, width, height, allow_input, crop);
+    app_t *app = app_create(window_system_connection, window, port, bit_rate, width, height, allow_input, crop);
 
     if (!app) {
         return 1;
     }
 
-    char real_window_title[56];
-    GetWindowTextA(window, real_window_title, sizeof(real_window_title));
     printf(
-        "Window 0x%08x: \"%s\"\n"
+        "Window"
+        #ifdef __linux__
+        " 0x%lu"
+        #endif
+        #ifdef _WIN32
+        " 0x%p"
+        #endif
+        ": \"%s\"\n"
         "Window size: %dx%d, output size: %dx%d, bit rate: %lli kb/s\n\n"
         "Server started on: http://%s:%d/\n\n",
-        window, real_window_title,
-        app->grabber->width, app->grabber->height,
-        app->encoder->out_width, app->encoder->out_height,
+#ifdef __linux__
+        window_get_handle(window),
+#endif
+#ifdef _WIN32
+        window_get_handle(window),
+#endif
+        window_get_title(window),
+        app->grabber->width,
+        app->grabber->height,
+        app->encoder->out_width,
+        app->encoder->out_height,
         app->encoder->context->bit_rate / 1000,
-        server_get_host_address(app->server), app->server->port
+        server_get_host_address(app->server),
+        app->server->port
     );
 
     app_run(app, fps);
 
     app_destroy(app);
 
+#ifdef _WIN32
+    for (size_t i = 0; i < argc; i++) {
+        free(argv[i]);
+    }
+    free(argv);
+#endif
+    windows_list_drop(windows_list);
+    window_system_connection_drop(window_system_connection);
+
     return 0;
 }
-

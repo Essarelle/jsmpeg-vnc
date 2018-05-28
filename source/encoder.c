@@ -3,10 +3,6 @@
 
 #include "encoder.h"
 
-#pragma comment(lib, "avcodec.lib")
-#pragma comment(lib, "avutil.lib")
-#pragma comment(lib, "swscale.lib")
-
 encoder_t *encoder_create(int in_width, int in_height, int out_width, int out_height, int bitrate) {
     encoder_t *self = (encoder_t *) malloc(sizeof(encoder_t));
     memset(self, 0, sizeof(encoder_t));
@@ -16,7 +12,6 @@ encoder_t *encoder_create(int in_width, int in_height, int out_width, int out_he
     self->out_width = out_width;
     self->out_height = out_height;
 
-    avcodec_register_all();
     self->codec = avcodec_find_encoder(AV_CODEC_ID_MPEG1VIDEO);
 
     self->context = avcodec_alloc_context3(self->codec);
@@ -39,7 +34,7 @@ encoder_t *encoder_create(int in_width, int in_height, int out_width, int out_he
     self->frame->pts = 0;
 
     int frame_size = avpicture_get_size(AV_PIX_FMT_YUV420P, out_width, out_height);
-    self->frame_buffer = malloc(frame_size);
+    self->frame_buffer = malloc((size_t) frame_size);
     avpicture_fill((AVPicture *) self->frame, (uint8_t *) self->frame_buffer, AV_PIX_FMT_YUV420P, out_width,
                    out_height);
 
@@ -68,7 +63,7 @@ void encoder_encode(encoder_t *self, void *rgb_pixels, void *encoded_data, size_
     int in_linesize[1] = {self->in_width * 4};
     sws_scale(self->sws, in_data, in_linesize, 0, self->in_height, self->frame->data, self->frame->linesize);
 
-    int available_size = *encoded_size;
+    size_t available_size = *encoded_size;
     *encoded_size = 0;
     self->frame->pts++;
 
@@ -77,10 +72,10 @@ void encoder_encode(encoder_t *self, void *rgb_pixels, void *encoded_data, size_
     avcodec_encode_video2(self->context, &self->packet, self->frame, &success);
     if (success) {
         if (self->packet.size <= available_size) {
-            memcpy(encoded_data, self->packet.data, self->packet.size);
-            *encoded_size = self->packet.size;
+            memcpy(encoded_data, self->packet.data, (size_t) self->packet.size);
+            *encoded_size = (size_t) self->packet.size;
         } else {
-            printf("Frame too large for buffer (size: %d needed: %d)\n", available_size, self->packet.size);
+            printf("Frame too large for buffer (size: %d needed: %d)\n", (int) available_size, self->packet.size);
         }
     }
     av_free_packet(&self->packet);
